@@ -1,4 +1,5 @@
 use std::cmp;
+use std::cmp::Ordering;
 
 pub enum Node<K, V> {
   Leaf {
@@ -119,7 +120,7 @@ impl<K, V> Node<K, V> {
         }
       }
     }
-    Node::update_height_hash(&mut root);
+    Node::update_height(&mut root);
     Node::balance(root)
   }
 
@@ -133,7 +134,7 @@ impl<K, V> Node<K, V> {
     }
   }
 
-  fn update_height_hash(root: &mut Box<Node<K, V>>) {
+  fn update_height(root: &mut Box<Node<K, V>>) {
     match root.as_mut() {
       Node::Inner {
         ref left,
@@ -151,11 +152,40 @@ impl<K, V> Node<K, V> {
     }
   }
 
+  pub fn update_hash(root: &mut Box<Node<K, V>>) -> Option<[u128; 2]> {
+    match root.as_mut() {
+      Node::Leaf { dirty, .. } => {
+        // update hash
+        Some([0u128, 1u128])
+      }
+      Node::Inner {
+        ref dirty,
+        ref mut left,
+        ref mut right,
+        ..
+      } => {
+        if !dirty {
+          return None;
+        }
+        let h_left = match left.as_mut() {
+          Some(node) => Node::update_hash(node),
+          None => None,
+        };
+        let r_right = match right.as_mut() {
+          Some(node) => Node::update_hash(node),
+          None => None,
+        };
+        Some([0u128, 1u128])
+      }
+    }
+  }
+
   fn rotate_right(mut root: Box<Node<K, V>>) -> Box<Node<K, V>> {
     match *root {
       Node::Leaf { .. } => unreachable!("Should not rotate leaf"),
       Node::Inner {
         left: ref mut root_left,
+        ref key,
         ..
       } => {
         let mut r = root_left.take().unwrap();
@@ -163,9 +193,9 @@ impl<K, V> Node<K, V> {
           Node::Leaf { .. } => unreachable!("Broken algorithm"),
           Node::Inner { ref mut right, .. } => {
             *root_left = right.take();
-            Node::update_height_hash(&mut root);
+            Node::update_height(&mut root);
             *right = Some(root);
-            Node::update_height_hash(&mut r);
+            Node::update_height(&mut r);
           }
         }
         return r;
@@ -184,10 +214,10 @@ impl<K, V> Node<K, V> {
         match *r {
           Node::Leaf { .. } => unreachable!("Broken algorithm"),
           Node::Inner { ref mut left, .. } => {
-            if Node::get_height(left) > Node::get_height(root_right) {
+            if Node::get_height(left) < Node::get_height(root_right) {
               Node::rotate_right(left.take().unwrap());
               *root_right = left.take();
-              Node::update_height_hash(&mut root);
+              Node::update_height(&mut root);
             } else {
               // Give back from take
               *root_right = Some(r);
@@ -211,9 +241,9 @@ impl<K, V> Node<K, V> {
           Node::Leaf { .. } => unreachable!("Broken algorithm"),
           Node::Inner { ref mut left, .. } => {
             *root_right = left.take();
-            Node::update_height_hash(&mut root);
+            Node::update_height(&mut root);
             *left = Some(root);
-            Node::update_height_hash(&mut r);
+            Node::update_height(&mut r);
           }
         }
         return r;
@@ -235,7 +265,7 @@ impl<K, V> Node<K, V> {
             if Node::get_height(root_left) > Node::get_height(right) {
               Node::rotate_left(right.take().unwrap());
               *root_left = right.take();
-              Node::update_height_hash(&mut root);
+              Node::update_height(&mut root);
             } else {
               // Give back from take
               *root_left = Some(r);
@@ -281,6 +311,39 @@ impl<K, V> Node<K, V> {
   }
 }
 
+impl<'a, K: Ord, V> Node<K, V> {
+  pub fn search(search_key: &K, root: &'a Box<Node<K, V>>) -> Option<(&'a K, &'a V)> {
+    match root.as_ref() {
+      Node::Leaf { key, value, .. } => {
+        if key == search_key {
+          Some((&key, &value))
+        } else {
+          None
+        }
+      }
+      Node::Inner {
+        key, left, right, ..
+      } => {
+        if search_key < key {
+          left
+            .as_ref()
+            .map_or(None, |node| Node::search(search_key, node))
+        } else {
+          right
+            .as_ref()
+            .map_or(None, |node| Node::search(search_key, node))
+        }
+      }
+    }
+  }
+}
+
+// impl<'a, K: Ord, V> IAVL<K, V> {
+//   pub fn search(&self, key: &K) -> Option<(&'a K, &'a V)> {
+//     // self.root.map_or(None, |node| Node::search(key, node))
+//   }
+// }
+
 impl<K, V> IAVL<K, V> {
   pub fn new() -> Self {
     return IAVL { root: None };
@@ -314,5 +377,29 @@ mod tests {
     // iavl.insert(11, 11);
     iavl.root.unwrap().print();
     // assert_eq!(node.key, 1);
+  }
+
+  #[test]
+  fn search() {
+    let mut iavl = IAVL::new();
+    iavl.insert(50, 50);
+    iavl.insert(40, 40);
+    iavl.insert(30, 30);
+    iavl.insert(20, 20);
+    iavl.insert(10, 10);
+    iavl.insert(9, 9);
+    iavl.insert(8, 8);
+    let root = &iavl.root.unwrap();
+    // let search_key = 11;
+    let s = Node::search(&11, root);
+    match s {
+      None => {}
+      Some(_) => assert!(false),
+    }
+    let s = Node::search(&50, root);
+    match s {
+      None => assert!(false),
+      Some(_) => {}
+    }
   }
 }
