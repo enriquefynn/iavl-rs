@@ -6,7 +6,7 @@ pub enum Node<K, V> {
     key: K,
     value: V,
     hash: Option<[u128; 2]>,
-    dirty: bool, // Used to calculate lazily calculate hash
+    dirty: bool, // Used to lazily calculate hash
   },
   Inner {
     left: Option<Box<Node<K, V>>>,
@@ -14,7 +14,7 @@ pub enum Node<K, V> {
     key: K,
     hash: Option<[u128; 2]>,
     height: u8,
-    dirty: bool, // Used to calculate lazily calculate hash
+    dirty: bool, // Used to lazily calculate hash
   },
 }
 
@@ -211,12 +211,12 @@ impl<K, V> Node<K, V> {
         ..
       } => {
         let mut r = root_right.take().unwrap();
-        match *r {
+        match r.as_mut() {
           Node::Leaf { .. } => unreachable!("Broken algorithm"),
-          Node::Inner { ref mut left, .. } => {
+          Node::Inner { left, .. } => {
             if Node::get_height(left) < Node::get_height(root_right) {
-              Node::rotate_right(left.take().unwrap());
-              *root_right = left.take();
+              let rotated_root = Node::rotate_right(r);
+              *root_right = Some(rotated_root);
               Node::update_height(&mut root);
             } else {
               // Give back from take
@@ -258,17 +258,17 @@ impl<K, V> Node<K, V> {
         left: ref mut root_left,
         ..
       } => {
-        let mut r = root_left.take().unwrap();
-        match *r {
+        let mut l = root_left.take().unwrap();
+        match l.as_mut() {
           Node::Leaf { .. } => unreachable!("Broken algorithm"),
-          Node::Inner { ref mut right, .. } => {
+          Node::Inner { right, .. } => {
             if Node::get_height(root_left) > Node::get_height(right) {
-              Node::rotate_left(right.take().unwrap());
-              *root_left = right.take();
+              let rotated_root = Node::rotate_left(l);
+              *root_left = Some(rotated_root);
               Node::update_height(&mut root);
             } else {
               // Give back from take
-              *root_left = Some(r);
+              *root_left = Some(l);
             }
           }
         }
@@ -338,12 +338,6 @@ impl<'a, K: Ord, V> Node<K, V> {
   }
 }
 
-// impl<'a, K: Ord, V> IAVL<K, V> {
-//   pub fn search(&self, key: &K) -> Option<(&'a K, &'a V)> {
-//     // self.root.map_or(None, |node| Node::search(key, node))
-//   }
-// }
-
 impl<K, V> IAVL<K, V> {
   pub fn new() -> Self {
     return IAVL { root: None };
@@ -371,32 +365,21 @@ mod tests {
   fn construct_tree() {
     let mut iavl = IAVL::new();
     iavl.insert(4, 4);
-    // iavl.insert(3, 3);
-    // iavl.insert(10, 10);
-    // iavl.insert(20, 20);
-    // iavl.insert(11, 11);
-    iavl.root.unwrap().print();
-    // assert_eq!(node.key, 1);
   }
 
   #[test]
   fn search() {
     let mut iavl = IAVL::new();
-    iavl.insert(50, 50);
-    iavl.insert(40, 40);
-    iavl.insert(30, 30);
-    iavl.insert(20, 20);
-    iavl.insert(10, 10);
-    iavl.insert(9, 9);
-    iavl.insert(8, 8);
+    for i in 0..10 {
+      iavl.insert(i, i);
+    }
     let root = &iavl.root.unwrap();
-    // let search_key = 11;
     let s = Node::search(&11, root);
     match s {
       None => {}
       Some(_) => assert!(false),
     }
-    let s = Node::search(&50, root);
+    let s = Node::search(&4, root);
     match s {
       None => assert!(false),
       Some(_) => {}
