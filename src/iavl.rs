@@ -204,6 +204,7 @@ impl<K, V> Node<K, V> {
   }
 
   fn rotate_right_left(mut root: Box<Node<K, V>>) -> Box<Node<K, V>> {
+    println!("ROTATE RL");
     match *root {
       Node::Leaf { .. } => unreachable!("Should not rotate leaf"),
       Node::Inner {
@@ -213,8 +214,8 @@ impl<K, V> Node<K, V> {
         let mut r = root_right.take().unwrap();
         match r.as_mut() {
           Node::Leaf { .. } => unreachable!("Broken algorithm"),
-          Node::Inner { left, .. } => {
-            if Node::get_height(left) < Node::get_height(root_right) {
+          Node::Inner { right, left, .. } => {
+            if Node::get_height(left) > Node::get_height(right) {
               let rotated_root = Node::rotate_right(r);
               *root_right = Some(rotated_root);
               Node::update_height(&mut root);
@@ -261,8 +262,8 @@ impl<K, V> Node<K, V> {
         let mut l = root_left.take().unwrap();
         match l.as_mut() {
           Node::Leaf { .. } => unreachable!("Broken algorithm"),
-          Node::Inner { right, .. } => {
-            if Node::get_height(root_left) > Node::get_height(right) {
+          Node::Inner { left, right, .. } => {
+            if Node::get_height(right) > Node::get_height(left) {
               let rotated_root = Node::rotate_left(l);
               *root_left = Some(rotated_root);
               Node::update_height(&mut root);
@@ -272,6 +273,7 @@ impl<K, V> Node<K, V> {
             }
           }
         }
+        println!("JUST");
         Node::rotate_right(root)
       }
     }

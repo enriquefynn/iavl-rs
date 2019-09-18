@@ -23,7 +23,6 @@ impl Graph {
       },
       None => "\"empty\"".to_string(),
     };
-    println!("FROM: {} TO: {}", fr, to);
     self.edges.push(format!("{} -- {}\n", fr, to));
   }
 
@@ -94,11 +93,11 @@ fn graphviz_tree() {
   let mut iavl = IAVL::new();
   iavl.insert(50, 50);
   iavl.insert(40, 40);
-  iavl.insert(30, 30);
-  iavl.insert(20, 20);
-  iavl.insert(10, 10);
-  iavl.insert(9, 9);
-  iavl.insert(8, 8);
+  iavl.insert(70, 70);
+  iavl.insert(45, 45);
+  iavl.insert(43, 43);
+  iavl.insert(47, 47);
+  iavl.insert(48, 48);
   let filename = "tree.dot".to_string();
   create_dot_graph(&filename, iavl);
   // assert_eq!(node.key, 1);
