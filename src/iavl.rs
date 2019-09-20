@@ -1,29 +1,32 @@
 use std::cmp;
-use std::cmp::Ordering;
+extern crate crypto;
+use self::crypto::digest::Digest;
+use crypto::sha3::Sha3;
 
 pub enum Node<K, V> {
   Leaf {
     key: K,
     value: V,
-    hash: Option<[u128; 2]>,
-    dirty: bool, // Used to lazily calculate hash
+    version: u32,
+    hash: Option<[u8; 32]>,
   },
   Inner {
     left: Option<Box<Node<K, V>>>,
     right: Option<Box<Node<K, V>>>,
     key: K,
-    hash: Option<[u128; 2]>,
+    hash: Option<[u8; 32]>,
     height: u8,
-    dirty: bool, // Used to lazily calculate hash
+    version: u32,
   },
 }
 
 pub struct IAVL<K, V> {
   pub root: Option<Box<Node<K, V>>>,
+  pub version: u32,
 }
 
 impl<K, V> Node<K, V> {
-  pub fn print(self)
+  pub fn print(&self)
   where
     K: std::fmt::Display,
     V: std::fmt::Display,
@@ -58,12 +61,22 @@ impl<K, V> Node<K, V> {
     }
   }
 
-  pub fn new_leaf(key: K, value: V) -> Self {
+  fn new_leaf(key: K, value: V, version: u32) -> Self {
     Node::Leaf {
       key: key,
       value: value,
       hash: None,
-      dirty: true,
+      version: version,
+    }
+  }
+  fn new_inner(key: K, left: Box<Node<K, V>>, right: Box<Node<K, V>>, version: u32) -> Node<K, V> {
+    Node::Inner {
+      key: key,
+      left: Some(left),
+      right: Some(right),
+      hash: None,
+      height: 1,
+      version: version,
     }
   }
 
@@ -71,17 +84,23 @@ impl<K, V> Node<K, V> {
     root: Option<Box<Node<K, V>>>,
     new_key: K,
     new_value: V,
+    version: u32,
   ) -> Option<Box<Node<K, V>>>
   where
     K: Ord + Copy,
   {
     Some(match root {
-      Some(node) => Node::insert(node, new_key, new_value),
-      None => Box::new(Node::new_leaf(new_key, new_value)),
+      Some(node) => Node::insert(node, new_key, new_value, version),
+      None => Box::new(Node::new_leaf(new_key, new_value, version)),
     })
   }
 
-  pub fn insert(mut root: Box<Node<K, V>>, new_key: K, new_value: V) -> Box<Node<K, V>>
+  pub fn insert(
+    mut root: Box<Node<K, V>>,
+    new_key: K,
+    new_value: V,
+    version: u32,
+  ) -> Box<Node<K, V>>
   where
     K: Ord + Copy,
   {
@@ -93,30 +112,26 @@ impl<K, V> Node<K, V> {
         ..
       } => {
         if new_key < key {
-          *left = Node::insert_in_child(left.take(), new_key, new_value)
+          *left = Node::insert_in_child(left.take(), new_key, new_value, version)
         } else {
-          *right = Node::insert_in_child(right.take(), new_key, new_value)
+          *right = Node::insert_in_child(right.take(), new_key, new_value, version)
         }
       }
       Node::Leaf { key, .. } => {
         if new_key < key {
-          root = Box::new(Node::Inner {
-            key: key,
-            left: Some(Box::new(Node::new_leaf(new_key, new_value))),
-            right: Some(root),
-            hash: None,
-            height: 1,
-            dirty: true,
-          });
+          root = Box::new(Node::new_inner(
+            key,
+            Box::new(Node::new_leaf(new_key, new_value, version)),
+            root,
+            version,
+          ));
         } else {
-          root = Box::new(Node::Inner {
-            key: new_key,
-            right: Some(Box::new(Node::new_leaf(new_key, new_value))),
-            left: Some(root),
-            hash: None,
-            height: 1,
-            dirty: true,
-          });
+          root = Box::new(Node::new_inner(
+            new_key,
+            root,
+            Box::new(Node::new_leaf(new_key, new_value, version)),
+            version,
+          ));
         }
       }
     }
@@ -124,7 +139,7 @@ impl<K, V> Node<K, V> {
     Node::balance(root)
   }
 
-  fn height(root: &Option<Box<Node<K, V>>>) -> u8 {
+  pub fn height(root: &Option<Box<Node<K, V>>>) -> u8 {
     match root {
       Some(node) => match node.as_ref() {
         Node::Inner { height, .. } => *height,
@@ -140,42 +155,43 @@ impl<K, V> Node<K, V> {
         ref left,
         ref right,
         ref mut height,
-        ref mut dirty,
         ..
       } => {
         *height = cmp::max(Node::height(left), Node::height(right)) + 1;
-        *dirty = true;
       }
-      Node::Leaf { dirty, .. } => {
-        *dirty = true;
-      }
+      Node::Leaf { .. } => {}
     }
   }
 
-  pub fn update_hash(root: &mut Box<Node<K, V>>) -> Option<[u128; 2]> {
+  pub fn update_hash(root: &mut Box<Node<K, V>>) -> [u8; 32] {
     match root.as_mut() {
-      Node::Leaf { dirty, .. } => {
+      Node::Leaf { hash, .. } => {
         // update hash
-        Some([0u128, 1u128])
+        let h = [0; 32];
+        *hash = Some(h);
+        h
       }
       Node::Inner {
-        ref dirty,
         ref mut left,
         ref mut right,
+        hash,
         ..
       } => {
-        if !dirty {
-          return None;
-        }
         let h_left = match left.as_mut() {
           Some(node) => Node::update_hash(node),
-          None => None,
+          None => [0; 32],
         };
-        let r_right = match right.as_mut() {
+        let h_right = match right.as_mut() {
           Some(node) => Node::update_hash(node),
-          None => None,
+          None => [0; 32],
         };
-        Some([0u128, 1u128])
+        let mut hasher = Sha3::sha3_256();
+        hasher.input(&h_left);
+        hasher.input(&h_right);
+        let mut h: [u8; 32] = [0; 32];
+        hasher.result(&mut h);
+        *hash = Some(h);
+        h
       }
     }
   }
@@ -185,11 +201,10 @@ impl<K, V> Node<K, V> {
       Node::Leaf { .. } => unreachable!("Should not rotate leaf"),
       Node::Inner {
         left: ref mut root_left,
-        ref key,
         ..
       } => {
         let mut r = root_left.take().unwrap();
-        match *r {
+        match r.as_mut() {
           Node::Leaf { .. } => unreachable!("Broken algorithm"),
           Node::Inner { ref mut right, .. } => {
             *root_left = right.take();
@@ -204,7 +219,6 @@ impl<K, V> Node<K, V> {
   }
 
   fn rotate_right_left(mut root: Box<Node<K, V>>) -> Box<Node<K, V>> {
-    println!("ROTATE RL");
     match *root {
       Node::Leaf { .. } => unreachable!("Should not rotate leaf"),
       Node::Inner {
@@ -238,7 +252,7 @@ impl<K, V> Node<K, V> {
         ..
       } => {
         let mut r = root_right.take().unwrap();
-        match *r {
+        match r.as_mut() {
           Node::Leaf { .. } => unreachable!("Broken algorithm"),
           Node::Inner { ref mut left, .. } => {
             *root_right = left.take();
@@ -273,7 +287,6 @@ impl<K, V> Node<K, V> {
             }
           }
         }
-        println!("JUST");
         Node::rotate_right(root)
       }
     }
@@ -300,7 +313,7 @@ impl<K, V> Node<K, V> {
     }
   }
 
-  pub fn balance(root: Box<Node<K, V>>) -> Box<Node<K, V>> {
+  fn balance(root: Box<Node<K, V>>) -> Box<Node<K, V>> {
     let height_diff = Node::height_difference(&root);
     if height_diff >= -1 && height_diff <= 1 {
       return root;
@@ -342,7 +355,10 @@ impl<'a, K: Ord, V> Node<K, V> {
 
 impl<K, V> IAVL<K, V> {
   pub fn new() -> Self {
-    return IAVL { root: None };
+    return IAVL {
+      root: None,
+      version: 0,
+    };
   }
   pub fn insert(&mut self, new_key: K, new_value: V)
   where
@@ -350,11 +366,17 @@ impl<K, V> IAVL<K, V> {
   {
     match self.root.take() {
       None => {
-        self.root = Some(Box::new(Node::new_leaf(new_key, new_value)));
+        self.root = Some(Box::new(Node::new_leaf(new_key, new_value, self.version)));
       }
       Some(root) => {
-        self.root = Some(Node::insert(root, new_key, new_value));
+        self.root = Some(Node::insert(root, new_key, new_value, self.version));
       }
+    }
+  }
+  pub fn save_tree(&mut self) -> [u8; 32] {
+    match self.root.as_mut() {
+      None => [0; 32],
+      Some(root) => Node::update_hash(root),
     }
   }
 }
@@ -386,5 +408,14 @@ mod tests {
       None => assert!(false),
       Some(_) => {}
     }
+  }
+
+  #[test]
+  fn calculate_hash() {
+    let mut iavl = IAVL::new();
+    for i in 0..10 {
+      iavl.insert(i, i);
+    }
+    iavl.save_tree();
   }
 }

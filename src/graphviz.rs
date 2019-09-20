@@ -28,10 +28,22 @@ impl Graph {
 
   fn add_node<K: Display, V: Display>(&mut self, node: &Node<K, V>) {
     let n = match node {
-      Node::Inner { height, key, .. } => {
-        format!("\"{}\" [label=\"{}\\nheight: {}\"]\n", key, key, height)
-      }
-      Node::Leaf { key, .. } => format!("\"{}l\" [shape=\"square\"; label=\"{}\"]\n", key, key),
+      Node::Inner {
+        height, key, hash, ..
+      } => format!(
+        "\"{}\" [label=\"Key: {}\\nheight: {}\\nHash: {}\"]\n",
+        key,
+        key,
+        height,
+        hex::encode(&hash.unwrap()[..4])
+      ),
+
+      Node::Leaf { key, hash, .. } => format!(
+        "\"{}l\" [shape=\"square\"; label=\"Key: {}\\nHash: {}\"]\n",
+        key,
+        key,
+        hex::encode(&hash.unwrap()[..3])
+      ),
     };
     self.nodes.push(n);
   }
@@ -98,6 +110,9 @@ fn graphviz_tree() {
   iavl.insert(43, 43);
   iavl.insert(47, 47);
   iavl.insert(48, 48);
+  iavl.insert(10, 10);
+  iavl.save_tree();
+  // Node::print(&iavl.root.unwrap());
   let filename = "tree.dot".to_string();
   create_dot_graph(&filename, iavl);
   // assert_eq!(node.key, 1);
